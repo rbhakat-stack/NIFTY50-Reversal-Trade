@@ -7,7 +7,12 @@ import streamlit as st
 
 from src import config
 from src.data.csv_loader import load_nifty_from_csv
-from src.data.data_fetcher import fetch_nifty_from_nse, fetch_nifty_from_yfinance, refresh_latest_nifty_data
+from src.data.data_fetcher import (
+    diagnose_data_source_environment,
+    fetch_nifty_from_nse,
+    fetch_nifty_from_yfinance,
+    refresh_latest_nifty_data,
+)
 from src.data.data_repository import fetch_price_history, upsert_daily_prices
 from src.data.data_validator import validate_ohlc_data
 from src.supabase_client import SupabaseConfigError
@@ -26,6 +31,30 @@ except SupabaseConfigError as exc:
 except Exception as exc:  # noqa: BLE001
     st.error(f"Could not load price history: {exc}")
     st.stop()
+
+env_info = diagnose_data_source_environment()
+if env_info["likely_wrong_interpreter"] or not env_info["yfinance_version_ok"] or not env_info["nsepython_installed"]:
+    with st.expander("⚠️ Data source environment check — click to view", expanded=True):
+        st.warning(
+            "This Python process may not be running from the project's `.venv`. "
+            "NSE and Yahoo Finance fetch failures often look like outages but are "
+            "actually caused by running the app with the wrong interpreter (missing "
+            "or outdated packages)."
+        )
+        st.code(
+            f"Python executable: {env_info['python_executable']}\n"
+            f"yfinance version:  {env_info['yfinance_version'] or 'not installed'} "
+            f"({'OK' if env_info['yfinance_version_ok'] else 'outdated / needs >= 1.5.1'})\n"
+            f"nsepython installed: {env_info['nsepython_installed']}",
+            language="text",
+        )
+        st.caption(
+            "Fix: stop the app, activate the project virtual environment, then restart it, e.g. "
+            "(from the project root) `.venv\\Scripts\\activate` then `streamlit run app.py` on "
+            "Windows, or `source .venv/Scripts/activate && streamlit run app.py` in Git Bash."
+        )
+else:
+    st.caption(f"Environment OK — running from `{env_info['python_executable']}`.")
 
 st.subheader("Current Data Status")
 cols = st.columns(4)

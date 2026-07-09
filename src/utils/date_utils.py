@@ -49,7 +49,13 @@ def add_trading_day_index(df: pd.DataFrame, date_col: str = "trade_date") -> pd.
 
 
 def get_next_trading_day(current_date: date, available_dates: pd.Series | list[date]) -> date | None:
-    """Return the first available trading date strictly after current_date, or None."""
+    """
+    Return the first available trading date strictly after current_date, or
+    None. `current_date` is coerced via `to_date()` because callers often pass
+    a value straight out of a Supabase row (e.g. `latest_signal["signal_date"]`),
+    which PostgREST serializes as an ISO date *string*, not a `datetime.date`.
+    """
+    current_date = to_date(current_date)
     dates = sorted(pd.to_datetime(pd.Series(list(available_dates))).dt.date.unique())
     for d in dates:
         if d > current_date:
@@ -58,7 +64,12 @@ def get_next_trading_day(current_date: date, available_dates: pd.Series | list[d
 
 
 def get_previous_trading_day(current_date: date, available_dates: pd.Series | list[date]) -> date | None:
-    """Return the last available trading date strictly before current_date, or None."""
+    """
+    Return the last available trading date strictly before current_date, or
+    None. `current_date` is coerced via `to_date()` for the same reason as
+    `get_next_trading_day` above.
+    """
+    current_date = to_date(current_date)
     dates = sorted(pd.to_datetime(pd.Series(list(available_dates))).dt.date.unique())
     prev = None
     for d in dates:

@@ -7,8 +7,10 @@ validation happens separately in `data_validator.validate_ohlc_data`.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Callable, TypeVar
 
 import pandas as pd
 
@@ -19,19 +21,101 @@ from src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
+_T = TypeVar("_T")
+_MAX_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = 2.0
+
 
 class DataSourceError(RuntimeError):
     """Raised when a data source cannot be reached or returns no usable data."""
 
 
+def _with_retries(fn: Callable[[], _T], source_name: str, max_attempts: int = _MAX_ATTEMPTS) -> _T:
+    """
+    Both NSE (niftyindices.com scraping) and Yahoo Finance's unofficial API are
+    known to intermittently return empty/malformed responses under rate
+    limiting rather than a clean HTTP error, especially for large historical
+    pulls. Retry a few times with a short backoff before giving up so a single
+    transient hiccup doesn't surface as "data source failed" to the user.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except DataSourceError as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                logger.warning(
+                    "%s attempt %d/%d failed (%s); retrying in %.1fs...",
+                    source_name,
+                    attempt,
+                    max_attempts,
+                    exc,
+                    _RETRY_BACKOFF_SECONDS,
+                )
+                time.sleep(_RETRY_BACKOFF_SECONDS)
+    raise last_exc  # noqa: RSE102 - re-raise the last observed failure after retries are exhausted
+
+
+_MIN_YFINANCE_VERSION = (1, 5, 1)
+
+
+def _parse_version(version_str: str) -> tuple[int, ...]:
+    parts = []
+    for part in version_str.split("."):
+        digits = "".join(ch for ch in part if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def diagnose_data_source_environment() -> dict:
+    """
+    Surfaces the exact Python interpreter and package versions this process is
+    running with. Both external data sources (NSE via nsepython, Yahoo
+    Finance) fail in ways that look identical from the UI whether the cause is
+    a real outage or simply the app running under the wrong Python
+    environment (e.g. a global interpreter instead of the project's `.venv`,
+    which is missing `nsepython` and/or has an outdated `yfinance` that Yahoo
+    silently rejects). This makes that distinction visible instead of forcing
+    a guess from a generic error message.
+    """
+    import sys
+
+    info: dict = {
+        "python_executable": sys.executable,
+        "likely_wrong_interpreter": ".venv" not in sys.executable.replace("\\", "/"),
+    }
+
+    try:
+        import yfinance as yf
+
+        info["yfinance_version"] = getattr(yf, "__version__", "unknown")
+        info["yfinance_version_ok"] = _parse_version(info["yfinance_version"]) >= _MIN_YFINANCE_VERSION
+    except ImportError:
+        info["yfinance_version"] = None
+        info["yfinance_version_ok"] = False
+
+    try:
+        import nsepython  # noqa: F401
+
+        info["nsepython_installed"] = True
+    except ImportError:
+        info["nsepython_installed"] = False
+
+    return info
+
+
 def fetch_nifty_from_yfinance(start_date: date, end_date: date) -> pd.DataFrame:
     import yfinance as yf
 
-    ticker = yf.Ticker(config.YFINANCE_SYMBOL)
-    raw = ticker.history(start=start_date.isoformat(), end=(end_date + timedelta(days=1)).isoformat())
-    if raw.empty:
-        raise DataSourceError(f"Yahoo Finance returned no data for {config.YFINANCE_SYMBOL}.")
+    def _attempt() -> pd.DataFrame:
+        ticker = yf.Ticker(config.YFINANCE_SYMBOL)
+        result = ticker.history(start=start_date.isoformat(), end=(end_date + timedelta(days=1)).isoformat())
+        if result.empty:
+            raise DataSourceError(f"Yahoo Finance returned no data for {config.YFINANCE_SYMBOL}.")
+        return result
 
+    raw = _with_retries(_attempt, config.DATA_SOURCE_YFINANCE)
     raw = raw.reset_index()
     raw = raw.rename(
         columns={
@@ -59,13 +143,16 @@ def fetch_nifty_from_nse(start_date: date, end_date: date) -> pd.DataFrame:
     except ImportError as exc:
         raise DataSourceError("nsepython is not installed; cannot query NSE directly.") from exc
 
-    try:
-        raw = index_history("NIFTY 50", start_date.strftime("%d-%b-%Y"), end_date.strftime("%d-%b-%Y"))
-    except Exception as exc:  # network / API errors from nsepython
-        raise DataSourceError(f"NSE data fetch failed: {exc}") from exc
+    def _attempt() -> pd.DataFrame:
+        try:
+            result = index_history("NIFTY 50", start_date.strftime("%d-%b-%Y"), end_date.strftime("%d-%b-%Y"))
+        except Exception as exc:  # network / API errors from nsepython
+            raise DataSourceError(f"NSE data fetch failed: {exc}") from exc
+        if result is None or result.empty:
+            raise DataSourceError("NSE returned no data for the requested range.")
+        return result
 
-    if raw is None or raw.empty:
-        raise DataSourceError("NSE returned no data for the requested range.")
+    raw = _with_retries(_attempt, config.DATA_SOURCE_NSE)
 
     raw = raw.rename(
         columns={

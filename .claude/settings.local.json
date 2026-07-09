@@ -4,7 +4,14 @@
       "Bash(python -m py_compile app.py pages/*.py src/*.py src/data/*.py src/models/*.py src/strategy/*.py src/alerts/*.py src/ui/*.py src/utils/*.py)",
       "Bash(python -m venv .venv)",
       "Bash(cd \"/c/Ranabir - C Drive/GitHub/NIFTY50 Reversal Trade\" && ls)",
-      "Bash(netstat -ano)"
+      "Bash(netstat -ano)",
+      "WebSearch",
+      "Bash(/c/Users/ronit/AppData/Local/Programs/Python/Python313/python.exe -c \"import nsepython; print\\('global has nsepython'\\)\")",
+      "Bash(/c/Users/ronit/AppData/Local/Programs/Python/Python313/python.exe -c \"import yfinance; print\\('global has yfinance', yfinance.__version__\\)\")",
+      "Bash(/c/Users/ronit/AppData/Local/Programs/Python/Python313/python.exe -c \"import yfinance; print\\('global yfinance version:', yfinance.__version__\\)\")",
+      "Bash(/c/Users/ronit/AppData/Local/Programs/Python/Python313/python.exe -c ' *)",
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 40140 -Force\")",
+      "Bash(.venv/Scripts/python.exe -c ' *)"
     ]
   }
 }

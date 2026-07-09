@@ -8,7 +8,7 @@ directly.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,29 @@ from src.utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 _BATCH_SIZE = 500
+_PAGE_SIZE = 1000
+
+
+def _fetch_all_rows(build_query: Callable[[], Any], page_size: int = _PAGE_SIZE) -> list[dict]:
+    """
+    PostgREST caps any single unpaginated response at a server-side max
+    (1000 rows by default on Supabase), silently truncating results for
+    tables that grow past that — which `nifty_daily_prices` will (~6,800+
+    trading days since 2000). `build_query` must be a zero-arg callable that
+    returns a *fresh* query builder (select + filters + order applied, but
+    `.execute()` not yet called) so we can page through with `.range()` until
+    a page comes back shorter than `page_size`.
+    """
+    all_rows: list[dict] = []
+    start = 0
+    while True:
+        response = build_query().range(start, start + page_size - 1).execute()
+        rows = response.data or []
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        start += page_size
+    return all_rows
 
 
 def _json_safe(value: Any) -> Any:
@@ -75,13 +98,16 @@ def upsert_daily_prices(df: pd.DataFrame) -> int:
 
 def fetch_price_history(start_date: date | None = None, end_date: date | None = None) -> pd.DataFrame:
     client = get_service_client()
-    query = client.table(config.TABLE_PRICES).select("*")
-    if start_date:
-        query = query.gte("trade_date", start_date.isoformat())
-    if end_date:
-        query = query.lte("trade_date", end_date.isoformat())
-    response = query.order("trade_date", desc=False).execute()
-    df = pd.DataFrame(response.data)
+
+    def build_query():
+        query = client.table(config.TABLE_PRICES).select("*")
+        if start_date:
+            query = query.gte("trade_date", start_date.isoformat())
+        if end_date:
+            query = query.lte("trade_date", end_date.isoformat())
+        return query.order("trade_date", desc=False)
+
+    df = pd.DataFrame(_fetch_all_rows(build_query))
     if not df.empty:
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
     return df
@@ -131,13 +157,16 @@ def fetch_latest_signal() -> dict | None:
 
 def fetch_signals(start_date: date | None = None, end_date: date | None = None) -> pd.DataFrame:
     client = get_service_client()
-    query = client.table(config.TABLE_SIGNALS).select("*")
-    if start_date:
-        query = query.gte("signal_date", start_date.isoformat())
-    if end_date:
-        query = query.lte("signal_date", end_date.isoformat())
-    response = query.order("signal_date", desc=False).execute()
-    return pd.DataFrame(response.data)
+
+    def build_query():
+        query = client.table(config.TABLE_SIGNALS).select("*")
+        if start_date:
+            query = query.gte("signal_date", start_date.isoformat())
+        if end_date:
+            query = query.lte("signal_date", end_date.isoformat())
+        return query.order("signal_date", desc=False)
+
+    return pd.DataFrame(_fetch_all_rows(build_query))
 
 
 # ---------------------------------------------------------------------------
@@ -159,23 +188,34 @@ def insert_trades(df: pd.DataFrame) -> int:
 
 def fetch_trades(start_date: date | None = None, end_date: date | None = None) -> pd.DataFrame:
     client = get_service_client()
-    query = client.table(config.TABLE_TRADES).select("*")
-    if start_date:
-        query = query.gte("execution_date", start_date.isoformat())
-    if end_date:
-        query = query.lte("execution_date", end_date.isoformat())
-    response = query.order("execution_date", desc=False).execute()
-    return pd.DataFrame(response.data)
+
+    def build_query():
+        query = client.table(config.TABLE_TRADES).select("*")
+        if start_date:
+            query = query.gte("execution_date", start_date.isoformat())
+        if end_date:
+            query = query.lte("execution_date", end_date.isoformat())
+        return query.order("execution_date", desc=False)
+
+    return pd.DataFrame(_fetch_all_rows(build_query))
 
 
 # ---------------------------------------------------------------------------
 # daily_strategy_state
 # ---------------------------------------------------------------------------
 def insert_daily_state(df: pd.DataFrame) -> int:
+    """
+    Upserts by trade_date. `df` (result.daily_state_df) carries extra
+    in-memory-only columns (benchmark_market_value, benchmark_units_held)
+    used by UI charts and summary metrics; these are not part of the
+    daily_strategy_state table schema, so filter to the schema allowlist
+    before writing or Supabase rejects the payload with PGRST204.
+    """
     if df.empty:
         return 0
     client = get_service_client()
-    records = _records_from_df(df)
+    schema_cols = [c for c in config.DAILY_STRATEGY_STATE_COLUMNS if c in df.columns]
+    records = _records_from_df(df[schema_cols])
     total = 0
     for batch in _batched(records):
         client.table(config.TABLE_STATE).upsert(batch, on_conflict="trade_date").execute()
@@ -198,13 +238,16 @@ def fetch_latest_portfolio_state() -> dict | None:
 
 def fetch_backtest_results(start_date: date | None = None, end_date: date | None = None) -> pd.DataFrame:
     client = get_service_client()
-    query = client.table(config.TABLE_STATE).select("*")
-    if start_date:
-        query = query.gte("trade_date", start_date.isoformat())
-    if end_date:
-        query = query.lte("trade_date", end_date.isoformat())
-    response = query.order("trade_date", desc=False).execute()
-    df = pd.DataFrame(response.data)
+
+    def build_query():
+        query = client.table(config.TABLE_STATE).select("*")
+        if start_date:
+            query = query.gte("trade_date", start_date.isoformat())
+        if end_date:
+            query = query.lte("trade_date", end_date.isoformat())
+        return query.order("trade_date", desc=False)
+
+    df = pd.DataFrame(_fetch_all_rows(build_query))
     if not df.empty:
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
     return df

@@ -30,10 +30,32 @@ def _get_secret(key: str, default: str | None = None) -> str | None:
     return default
 
 
+def _normalize_supabase_url(url: str | None) -> str | None:
+    """
+    Normalize a user-supplied Supabase project URL.
+
+    supabase-py appends `/rest/v1`, `/auth/v1`, etc. to whatever base URL it is
+    given, so SUPABASE_URL must be just the project root (e.g.
+    `https://xxxx.supabase.co`) with no trailing slash or path suffix. If a
+    trailing slash or an API path segment (commonly copy-pasted by mistake
+    from the REST/GraphQL docs) sneaks in, PostgREST rejects the resulting
+    doubled-up path with a 404 `PGRST125: Invalid path specified in request
+    URL`. Strip those here so a minor copy/paste mistake in `.env` doesn't
+    break every page in the app.
+    """
+    if not url:
+        return url
+    url = url.strip().rstrip("/")
+    for suffix in ("/rest/v1", "/rest", "/auth/v1", "/graphql/v1", "/storage/v1"):
+        if url.lower().endswith(suffix):
+            url = url[: -len(suffix)]
+    return url
+
+
 # ---------------------------------------------------------------------------
 # Supabase / environment configuration
 # ---------------------------------------------------------------------------
-SUPABASE_URL: str | None = _get_secret("SUPABASE_URL")
+SUPABASE_URL: str | None = _normalize_supabase_url(_get_secret("SUPABASE_URL"))
 SUPABASE_SERVICE_ROLE_KEY: str | None = _get_secret("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_ANON_KEY: str | None = _get_secret("SUPABASE_ANON_KEY")
 
@@ -71,6 +93,30 @@ STRATEGY_TRADES_COLUMNS = [
     "net_units_change",
     "portfolio_units_after_trade",
     "cash_flow",
+]
+
+# Canonical daily_strategy_state columns; used to strip in-memory-only fields
+# (e.g. benchmark_market_value, benchmark_units_held — needed for UI charts
+# and summary metrics but not part of the Supabase table schema) before
+# persisting to Supabase.
+DAILY_STRATEGY_STATE_COLUMNS = [
+    "trade_date",
+    "actual_close",
+    "predicted_trend_price",
+    "deviation_pct",
+    "signal_type",
+    "total_units_held",
+    "portfolio_market_value",
+    "cumulative_buy_amount",
+    "cumulative_sell_amount",
+    "net_capital_deployed",
+    "realized_pnl",
+    "unrealized_pnl",
+    "total_pnl",
+    "strategy_return_pct",
+    "benchmark_return_pct",
+    "alpha_pct",
+    "drawdown_pct",
 ]
 
 # ---------------------------------------------------------------------------
