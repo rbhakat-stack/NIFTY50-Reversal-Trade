@@ -1,0 +1,18 @@
+streamlit>=1.33
+pandas>=2.0
+numpy>=1.24
+plotly>=5.20
+scikit-learn>=1.4
+statsmodels>=0.14
+supabase>=2.4
+python-dotenv>=1.0
+yfinance>=0.2.37
+requests>=2.31
+pydantic>=2.6
+pytest>=8.0
+
+# optional
+nsepython>=2.90
+ta>=0.11
+apscheduler>=3.10
+sendgrid>=6.11

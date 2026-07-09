@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app.py pages/*.py src/*.py src/data/*.py src/models/*.py src/strategy/*.py src/alerts/*.py src/ui/*.py src/utils/*.py)",
+      "Bash(python -m venv .venv)",
+      "Bash(cd \"/c/Ranabir - C Drive/GitHub/NIFTY50 Reversal Trade\" && ls)",
+      "Bash(netstat -ano)"
+    ]
+  }
+}
