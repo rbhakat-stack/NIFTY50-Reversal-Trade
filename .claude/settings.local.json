@@ -11,7 +11,8 @@
       "Bash(/c/Users/ronit/AppData/Local/Programs/Python/Python313/python.exe -c \"import yfinance; print\\('global yfinance version:', yfinance.__version__\\)\")",
       "Bash(/c/Users/ronit/AppData/Local/Programs/Python/Python313/python.exe -c ' *)",
       "Bash(powershell -NoProfile -Command \"Stop-Process -Id 40140 -Force\")",
-      "Bash(.venv/Scripts/python.exe -c ' *)"
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -q)"
     ]
   }
 }

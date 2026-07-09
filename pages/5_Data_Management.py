@@ -49,9 +49,13 @@ if env_info["likely_wrong_interpreter"] or not env_info["yfinance_version_ok"] o
             language="text",
         )
         st.caption(
-            "Fix: stop the app, activate the project virtual environment, then restart it, e.g. "
-            "(from the project root) `.venv\\Scripts\\activate` then `streamlit run app.py` on "
-            "Windows, or `source .venv/Scripts/activate && streamlit run app.py` in Git Bash."
+            "Fix: make sure `yfinance>=1.5.1` (see `requirements.txt`) is actually installed in "
+            "the environment this app is running in, then restart the app. Locally: stop the app, "
+            "activate the project virtual environment, then restart it, e.g. (from the project "
+            "root) `.venv\\Scripts\\activate` then `streamlit run app.py` on Windows, or "
+            "`source .venv/Scripts/activate && streamlit run app.py` in Git Bash. On Streamlit "
+            "Community Cloud or another managed host: confirm `requirements.txt` is up to date, "
+            "then use the platform's \"Reboot app\" / redeploy action so it reinstalls dependencies."
         )
 else:
     st.caption(f"Environment OK — running from `{env_info['python_executable']}`.")

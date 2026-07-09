@@ -83,7 +83,6 @@ def diagnose_data_source_environment() -> dict:
 
     info: dict = {
         "python_executable": sys.executable,
-        "likely_wrong_interpreter": ".venv" not in sys.executable.replace("\\", "/"),
     }
 
     try:
@@ -101,6 +100,17 @@ def diagnose_data_source_environment() -> dict:
         info["nsepython_installed"] = True
     except ImportError:
         info["nsepython_installed"] = False
+
+    # "Wrong interpreter" can only be inferred from *symptoms* (an outdated or
+    # missing package) — never from the executable's path text. Local dev
+    # commonly uses a folder literally named `.venv`, but managed platforms
+    # are equally "correct" environments that just use a different path
+    # (Streamlit Community Cloud uses `/home/adminuser/venv/bin/python3`,
+    # Docker/conda use other names entirely). A naive path check like
+    # `".venv" not in sys.executable` false-positives on every one of those,
+    # flagging a healthy deployment as broken. Use the real package-health
+    # signals instead.
+    info["likely_wrong_interpreter"] = not info["yfinance_version_ok"]
 
     return info
 
